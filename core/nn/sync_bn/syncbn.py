@@ -10,13 +10,14 @@
 
 """Synchronized Cross-GPU Batch Normalization Module"""
 import warnings
-import torch
-
-from torch.nn.modules.batchnorm import _BatchNorm
 from queue import Queue
+
+import torch
+from torch.nn.modules.batchnorm import _BatchNorm
+
 from .functions import *
 
-__all__ = ['SyncBatchNorm', 'BatchNorm1d', 'BatchNorm2d', 'BatchNorm3d']
+__all__ = ["SyncBatchNorm", "BatchNorm1d", "BatchNorm2d", "BatchNorm3d"]
 
 
 # Adopt from https://github.com/zhanghang1989/PyTorch-Encoding/blob/master/encoding/nn/syncbn.py
@@ -49,10 +50,21 @@ class SyncBatchNorm(_BatchNorm):
         >>> output = net(input)
     """
 
-    def __init__(self, num_features, eps=1e-5, momentum=0.1, sync=True, activation='none', slope=0.01, inplace=True):
-        super(SyncBatchNorm, self).__init__(num_features, eps=eps, momentum=momentum, affine=True)
+    def __init__(
+        self,
+        num_features,
+        eps=1e-5,
+        momentum=0.1,
+        sync=True,
+        activation="none",
+        slope=0.01,
+        inplace=True,
+    ):
+        super(SyncBatchNorm, self).__init__(
+            num_features, eps=eps, momentum=momentum, affine=True
+        )
         self.activation = activation
-        self.inplace = False if activation == 'none' else inplace
+        self.inplace = False if activation == "none" else inplace
         self.slope = slope
         self.devices = list(range(torch.cuda.device_count()))
         self.sync = sync if len(self.devices) > 1 else False
@@ -71,38 +83,67 @@ class SyncBatchNorm(_BatchNorm):
                 "is_master": True,
                 "master_queue": self.master_queue,
                 "worker_queues": self.worker_queues,
-                "worker_ids": self.worker_ids
+                "worker_ids": self.worker_ids,
             }
         else:
             # Worker mode
             extra = {
                 "is_master": False,
                 "master_queue": self.master_queue,
-                "worker_queue": self.worker_queues[self.worker_ids.index(x.get_device())]
+                "worker_queue": self.worker_queues[
+                    self.worker_ids.index(x.get_device())
+                ],
             }
         if self.inplace:
-            return inp_syncbatchnorm(x, self.weight, self.bias, self.running_mean, self.running_var,
-                                     extra, self.sync, self.training, self.momentum, self.eps,
-                                     self.activation, self.slope).view(input_shape)
+            return inp_syncbatchnorm(
+                x,
+                self.weight,
+                self.bias,
+                self.running_mean,
+                self.running_var,
+                extra,
+                self.sync,
+                self.training,
+                self.momentum,
+                self.eps,
+                self.activation,
+                self.slope,
+            ).view(input_shape)
         else:
-            return syncbatchnorm(x, self.weight, self.bias, self.running_mean, self.running_var,
-                                 extra, self.sync, self.training, self.momentum, self.eps,
-                                 self.activation, self.slope).view(input_shape)
+            return syncbatchnorm(
+                x,
+                self.weight,
+                self.bias,
+                self.running_mean,
+                self.running_var,
+                extra,
+                self.sync,
+                self.training,
+                self.momentum,
+                self.eps,
+                self.activation,
+                self.slope,
+            ).view(input_shape)
 
     def extra_repr(self):
-        if self.activation == 'none':
-            return 'sync={}'.format(self.sync)
+        if self.activation == "none":
+            return "sync={}".format(self.sync)
         else:
-            return 'sync={}, act={}, slope={}, inplace={}'.format(
-                self.sync, self.activation, self.slope, self.inplace)
+            return "sync={}, act={}, slope={}, inplace={}".format(
+                self.sync, self.activation, self.slope, self.inplace
+            )
 
 
 class BatchNorm1d(SyncBatchNorm):
     """BatchNorm1d is deprecated in favor of :class:`core.nn.sync_bn.SyncBatchNorm`."""
 
     def __init__(self, *args, **kwargs):
-        warnings.warn("core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}."
-                      .format('BatchNorm1d', SyncBatchNorm.__name__), DeprecationWarning)
+        warnings.warn(
+            "core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}.".format(
+                "BatchNorm1d", SyncBatchNorm.__name__
+            ),
+            DeprecationWarning,
+        )
         super(BatchNorm1d, self).__init__(*args, **kwargs)
 
 
@@ -110,8 +151,12 @@ class BatchNorm2d(SyncBatchNorm):
     """BatchNorm1d is deprecated in favor of :class:`core.nn.sync_bn.SyncBatchNorm`."""
 
     def __init__(self, *args, **kwargs):
-        warnings.warn("core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}."
-                      .format('BatchNorm2d', SyncBatchNorm.__name__), DeprecationWarning)
+        warnings.warn(
+            "core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}.".format(
+                "BatchNorm2d", SyncBatchNorm.__name__
+            ),
+            DeprecationWarning,
+        )
         super(BatchNorm2d, self).__init__(*args, **kwargs)
 
 
@@ -119,6 +164,10 @@ class BatchNorm3d(SyncBatchNorm):
     """BatchNorm1d is deprecated in favor of :class:`core.nn.sync_bn.SyncBatchNorm`."""
 
     def __init__(self, *args, **kwargs):
-        warnings.warn("core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}."
-                      .format('BatchNorm3d', SyncBatchNorm.__name__), DeprecationWarning)
+        warnings.warn(
+            "core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}.".format(
+                "BatchNorm3d", SyncBatchNorm.__name__
+            ),
+            DeprecationWarning,
+        )
         super(BatchNorm3d, self).__init__(*args, **kwargs)

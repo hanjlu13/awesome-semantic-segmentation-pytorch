@@ -3,9 +3,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from core.nn import _ConvBNPReLU, _BNPReLU
+from core.nn import _BNPReLU, _ConvBNPReLU
 
-__all__ = ['CGNet', 'get_cgnet', 'get_cgnet_citys']
+__all__ = ["CGNet", "get_cgnet", "get_cgnet_citys"]
 
 
 class CGNet(nn.Module):
@@ -26,7 +26,17 @@ class CGNet(nn.Module):
         arXiv preprint arXiv:1811.08201 (2018).
     """
 
-    def __init__(self, nclass, backbone='', aux=False, jpu=False, pretrained_base=True, M=3, N=21, **kwargs):
+    def __init__(
+        self,
+        nclass,
+        backbone="",
+        aux=False,
+        jpu=False,
+        pretrained_base=True,
+        M=3,
+        N=21,
+        **kwargs
+    ):
         super(CGNet, self).__init__()
         # stage 1
         self.stage1_0 = _ConvBNPReLU(3, 32, 3, 2, 1, **kwargs)
@@ -38,26 +48,61 @@ class CGNet(nn.Module):
         self.bn_prelu1 = _BNPReLU(32 + 3, **kwargs)
 
         # stage 2
-        self.stage2_0 = ContextGuidedBlock(32 + 3, 64, dilation=2, reduction=8, down=True, residual=False, **kwargs)
+        self.stage2_0 = ContextGuidedBlock(
+            32 + 3,
+            64,
+            dilation=2,
+            reduction=8,
+            down=True,
+            residual=False,
+            **kwargs
+        )
         self.stage2 = nn.ModuleList()
         for i in range(0, M - 1):
-            self.stage2.append(ContextGuidedBlock(64, 64, dilation=2, reduction=8, **kwargs))
+            self.stage2.append(
+                ContextGuidedBlock(64, 64, dilation=2, reduction=8, **kwargs)
+            )
         self.bn_prelu2 = _BNPReLU(128 + 3, **kwargs)
 
         # stage 3
-        self.stage3_0 = ContextGuidedBlock(128 + 3, 128, dilation=4, reduction=16, down=True, residual=False, **kwargs)
+        self.stage3_0 = ContextGuidedBlock(
+            128 + 3,
+            128,
+            dilation=4,
+            reduction=16,
+            down=True,
+            residual=False,
+            **kwargs
+        )
         self.stage3 = nn.ModuleList()
         for i in range(0, N - 1):
-            self.stage3.append(ContextGuidedBlock(128, 128, dilation=4, reduction=16, **kwargs))
+            self.stage3.append(
+                ContextGuidedBlock(128, 128, dilation=4, reduction=16, **kwargs)
+            )
         self.bn_prelu3 = _BNPReLU(256, **kwargs)
 
         self.head = nn.Sequential(
-            nn.Dropout2d(0.1, False),
-            nn.Conv2d(256, nclass, 1))
+            nn.Dropout2d(0.1, False), nn.Conv2d(256, nclass, 1)
+        )
 
-        self.__setattr__('exclusive', ['stage1_0', 'stage1_1', 'stage1_2', 'sample1', 'sample2',
-                                       'bn_prelu1', 'stage2_0', 'stage2', 'bn_prelu2', 'stage3_0',
-                                       'stage3', 'bn_prelu3', 'head'])
+        self.__setattr__(
+            "exclusive",
+            [
+                "stage1_0",
+                "stage1_1",
+                "stage1_2",
+                "sample1",
+                "sample2",
+                "bn_prelu1",
+                "stage2_0",
+                "stage2",
+                "bn_prelu2",
+                "stage3_0",
+                "stage3",
+                "bn_prelu3",
+                "head",
+            ],
+        )
 
     def forward(self, x):
         size = x.size()[2:]
@@ -90,7 +135,7 @@ class CGNet(nn.Module):
 
         outputs = []
         out = self.head(out2_cat)
-        out = F.interpolate(out, size, mode='bilinear', align_corners=True)
+        out = F.interpolate(out, size, mode="bilinear", align_corners=True)
         outputs.append(out)
         return tuple(outputs)
 
@@ -98,7 +143,16 @@ class CGNet(nn.Module):
 class _ChannelWiseConv(nn.Module):
     def __init__(self, in_channels, out_channels, dilation=1, **kwargs):
         super(_ChannelWiseConv, self).__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, 3, 1, dilation, dilation, groups=in_channels, bias=False)
+        self.conv = nn.Conv2d(
+            in_channels,
+            out_channels,
+            3,
+            1,
+            dilation,
+            dilation,
+            groups=in_channels,
+            bias=False,
+        )
 
     def forward(self, x):
         x = self.conv(x)
@@ -113,7 +167,8 @@ class _FGlo(nn.Module):
             nn.Linear(in_channels, in_channels // reduction),
             nn.ReLU(True),
             nn.Linear(in_channels // reduction, in_channels),
-            nn.Sigmoid())
+            nn.Sigmoid(),
+        )
 
     def forward(self, x):
         n, c, _, _ = x.size()
@@ -149,17 +204,46 @@ class _ConcatInjection(nn.Module):
 
 
 class ContextGuidedBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, dilation=2, reduction=16, down=False,
-                 residual=True, norm_layer=nn.BatchNorm2d, **kwargs):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        dilation=2,
+        reduction=16,
+        down=False,
+        residual=True,
+        norm_layer=nn.BatchNorm2d,
+        **kwargs
+    ):
         super(ContextGuidedBlock, self).__init__()
         inter_channels = out_channels // 2 if not down else out_channels
         if down:
-            self.conv = _ConvBNPReLU(in_channels, inter_channels, 3, 2, 1, norm_layer=norm_layer, **kwargs)
-            self.reduce = nn.Conv2d(inter_channels * 2, out_channels, 1, bias=False)
+            self.conv = _ConvBNPReLU(
+                in_channels,
+                inter_channels,
+                3,
+                2,
+                1,
+                norm_layer=norm_layer,
+                **kwargs
+            )
+            self.reduce = nn.Conv2d(
+                inter_channels * 2, out_channels, 1, bias=False
+            )
         else:
-            self.conv = _ConvBNPReLU(in_channels, inter_channels, 1, 1, 0, norm_layer=norm_layer, **kwargs)
+            self.conv = _ConvBNPReLU(
+                in_channels,
+                inter_channels,
+                1,
+                1,
+                0,
+                norm_layer=norm_layer,
+                **kwargs
+            )
         self.f_loc = _ChannelWiseConv(inter_channels, inter_channels, **kwargs)
-        self.f_sur = _ChannelWiseConv(inter_channels, inter_channels, dilation, **kwargs)
+        self.f_sur = _ChannelWiseConv(
+            inter_channels, inter_channels, dilation, **kwargs
+        )
         self.bn = norm_layer(inter_channels * 2)
         self.prelu = nn.PReLU(inter_channels * 2)
         self.f_glo = _FGlo(out_channels, reduction, **kwargs)
@@ -183,28 +267,46 @@ class ContextGuidedBlock(nn.Module):
         return out
 
 
-def get_cgnet(dataset='citys', backbone='', pretrained=False, root='~/.torch/models', pretrained_base=True, **kwargs):
+def get_cgnet(
+    dataset="citys",
+    backbone="",
+    pretrained=False,
+    root="~/.torch/models",
+    pretrained_base=True,
+    **kwargs
+):
     acronyms = {
-        'pascal_voc': 'pascal_voc',
-        'pascal_aug': 'pascal_aug',
-        'ade20k': 'ade',
-        'coco': 'coco',
-        'citys': 'citys',
+        "pascal_voc": "pascal_voc",
+        "pascal_aug": "pascal_aug",
+        "ade20k": "ade",
+        "coco": "coco",
+        "citys": "citys",
     }
     from core.data.dataloader import datasets
-    model = CGNet(datasets[dataset].NUM_CLASS, backbone=backbone, pretrained_base=pretrained_base, **kwargs)
+
+    model = CGNet(
+        datasets[dataset].NUM_CLASS,
+        backbone=backbone,
+        pretrained_base=pretrained_base,
+        **kwargs
+    )
     if pretrained:
         from .model_store import get_model_file
-        device = torch.device(kwargs['local_rank'])
-        model.load_state_dict(torch.load(get_model_file('cgnet_%s' % (acronyms[dataset]), root=root),
-                              map_location=device))
+
+        device = torch.device(kwargs["local_rank"])
+        model.load_state_dict(
+            torch.load(
+                get_model_file("cgnet_%s" % (acronyms[dataset]), root=root),
+                map_location=device,
+            )
+        )
     return model
 
 
 def get_cgnet_citys(**kwargs):
-    return get_cgnet('citys', '', **kwargs)
+    return get_cgnet("citys", "", **kwargs)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     model = get_cgnet_citys()
     print(model)

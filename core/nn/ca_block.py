@@ -1,11 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from torch.autograd.function import once_differentiable
+
 from core.nn import _C
 
-__all__ = ['CrissCrossAttention', 'ca_weight', 'ca_map']
+__all__ = ["CrissCrossAttention", "ca_weight", "ca_map"]
 
 
 class _CAWeight(torch.autograd.Function):

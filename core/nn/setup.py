@@ -2,12 +2,17 @@
 # !/usr/bin/env python
 # reference: https://github.com/facebookresearch/maskrcnn-benchmark/blob/90c226cf10e098263d1df28bda054a5f22513b4f/setup.py
 
-import os
 import glob
-import torch
+import os
 
+import torch
 from setuptools import setup
-from torch.utils.cpp_extension import BuildExtension, CppExtension, CUDAExtension, CUDA_HOME
+from torch.utils.cpp_extension import (
+    CUDA_HOME,
+    BuildExtension,
+    CppExtension,
+    CUDAExtension,
+)
 
 requirements = ["torch"]
 
@@ -25,7 +30,9 @@ def get_extension():
 
     define_macros = []
 
-    if (torch.cuda.is_available() and CUDA_HOME is not None) or os.getenv("FORCE_CUDA", "0") == "1":
+    if (torch.cuda.is_available() and CUDA_HOME is not None) or os.getenv(
+        "FORCE_CUDA", "0"
+    ) == "1":
         extension = CUDAExtension
         sources += source_cuda
         define_macros += [("WITH_CUDA", None)]
@@ -52,5 +59,5 @@ setup(
     author="tramac",
     description="semantic segmentation in pytorch",
     ext_modules=get_extension(),
-    cmdclass={"build_ext": BuildExtension}
+    cmdclass={"build_ext": BuildExtension},
 )

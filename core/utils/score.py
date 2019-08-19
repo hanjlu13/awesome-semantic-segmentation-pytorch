@@ -1,9 +1,16 @@
 """Evaluation Metrics for Semantic Segmentation"""
-import torch
 import numpy as np
+import torch
 
-__all__ = ['SegmentationMetric', 'batch_pix_accuracy', 'batch_intersection_union',
-           'pixelAccuracy', 'intersectionAndUnion', 'hist_info', 'compute_score']
+__all__ = [
+    "SegmentationMetric",
+    "batch_pix_accuracy",
+    "batch_intersection_union",
+    "pixelAccuracy",
+    "intersectionAndUnion",
+    "hist_info",
+    "compute_score",
+]
 
 
 class SegmentationMetric(object):
@@ -52,8 +59,14 @@ class SegmentationMetric(object):
         metrics : tuple of float
             pixAcc and mIoU
         """
-        pixAcc = 1.0 * self.total_correct / (2.220446049250313e-16 + self.total_label)  # remove np.spacing(1)
-        IoU = 1.0 * self.total_inter / (2.220446049250313e-16 + self.total_union)
+        pixAcc = (
+            1.0
+            * self.total_correct
+            / (2.220446049250313e-16 + self.total_label)
+        )  # remove np.spacing(1)
+        IoU = (
+            1.0 * self.total_inter / (2.220446049250313e-16 + self.total_union)
+        )
         mIoU = IoU.mean().item()
         return pixAcc, mIoU
 
@@ -74,7 +87,9 @@ def batch_pix_accuracy(output, target):
 
     pixel_labeled = torch.sum(target > 0).item()
     pixel_correct = torch.sum((predict == target) * (target > 0)).item()
-    assert pixel_correct <= pixel_labeled, "Correct area should be smaller than Labeled"
+    assert (
+        pixel_correct <= pixel_labeled
+    ), "Correct area should be smaller than Labeled"
     return pixel_correct, pixel_labeled
 
 
@@ -95,7 +110,9 @@ def batch_intersection_union(output, target, nclass):
     area_pred = torch.histc(predict.cpu(), bins=nbins, min=mini, max=maxi)
     area_lab = torch.histc(target.cpu(), bins=nbins, min=mini, max=maxi)
     area_union = area_pred + area_lab - area_inter
-    assert torch.sum(area_inter > area_union).item() == 0, "Intersection area should be smaller than Union area"
+    assert (
+        torch.sum(area_inter > area_union).item() == 0
+    ), "Intersection area should be smaller than Union area"
     return area_inter.float(), area_union.float()
 
 
@@ -131,7 +148,9 @@ def intersectionAndUnion(imPred, imLab, numClass):
 
     # Compute area intersection:
     intersection = imPred * (imPred == imLab)
-    (area_intersection, _) = np.histogram(intersection, bins=numClass, range=(1, numClass))
+    (area_intersection, _) = np.histogram(
+        intersection, bins=numClass, range=(1, numClass)
+    )
 
     # Compute area union:
     (area_pred, _) = np.histogram(imPred, bins=numClass, range=(1, numClass))
@@ -146,8 +165,13 @@ def hist_info(pred, label, num_cls):
     labeled = np.sum(k)
     correct = np.sum((pred[k] == label[k]))
 
-    return np.bincount(num_cls * label[k].astype(int) + pred[k], minlength=num_cls ** 2).reshape(num_cls,
-                                                                                                 num_cls), labeled, correct
+    return (
+        np.bincount(
+            num_cls * label[k].astype(int) + pred[k], minlength=num_cls ** 2
+        ).reshape(num_cls, num_cls),
+        labeled,
+        correct,
+    )
 
 
 def compute_score(hist, correct, labeled):

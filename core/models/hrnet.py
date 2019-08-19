@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class HRNet(nn.Module):
     """HRNet
 
@@ -22,7 +23,10 @@ class HRNet(nn.Module):
         Ke Sun. "High-Resolution Representations for Labeling Pixels and Regions."
         arXiv preprint arXiv:1904.04514 (2019).
     """
-    def __init__(self, nclass, backbone='', aux=False, pretrained_base=False, **kwargs):
+
+    def __init__(
+        self, nclass, backbone="", aux=False, pretrained_base=False, **kwargs
+    ):
         super(HRNet, self).__init__()
 
     def forward(self, x):

@@ -1,10 +1,15 @@
 import torch
 import torch.nn as nn
-
 from torch.autograd.function import once_differentiable
+
 from core.nn import _C
 
-__all__ = ['CollectAttention', 'DistributeAttention', 'psa_collect', 'psa_distribute']
+__all__ = [
+    "CollectAttention",
+    "DistributeAttention",
+    "psa_collect",
+    "psa_distribute",
+]
 
 
 class _PSACollect(torch.autograd.Function):

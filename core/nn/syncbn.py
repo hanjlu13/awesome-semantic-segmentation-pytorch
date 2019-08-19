@@ -1,23 +1,37 @@
 # Adopt from https://github.com/zhanghang1989/PyTorch-Encoding/blob/master/encoding/nn/syncbn.py
 """Synchronized Cross-GPU Batch Normalization Module"""
 import warnings
+from queue import Queue
+
 import torch
 import torch.cuda.comm as comm
-
-from queue import Queue
 from torch.autograd import Function
-from torch.nn.modules.batchnorm import _BatchNorm
 from torch.autograd.function import once_differentiable
+from torch.nn.modules.batchnorm import _BatchNorm
+
 from core.nn import _C
 
-__all__ = ['SyncBatchNorm', 'BatchNorm1d', 'BatchNorm2d', 'BatchNorm3d']
+__all__ = ["SyncBatchNorm", "BatchNorm1d", "BatchNorm2d", "BatchNorm3d"]
 
 
 class _SyncBatchNorm(Function):
     @classmethod
-    def forward(cls, ctx, x, gamma, beta, running_mean, running_var,
-                extra, sync=True, training=True, momentum=0.1, eps=1e-05,
-                activation="none", slope=0.01):
+    def forward(
+        cls,
+        ctx,
+        x,
+        gamma,
+        beta,
+        running_mean,
+        running_var,
+        extra,
+        sync=True,
+        training=True,
+        momentum=0.1,
+        eps=1e-05,
+        activation="none",
+        slope=0.01,
+    ):
         # save context
         cls._parse_extra(ctx, extra)
         ctx.sync = sync
@@ -26,7 +40,7 @@ class _SyncBatchNorm(Function):
         ctx.eps = eps
         ctx.activation = activation
         ctx.slope = slope
-        assert activation == 'none'
+        assert activation == "none"
 
         # continous inputs
         x = x.contiguous()
@@ -48,7 +62,9 @@ class _SyncBatchNorm(Function):
                     _ex = comm.gather(_ex).mean(0)
                     _exs = comm.gather(_exs).mean(0)
 
-                    tensors = comm.broadcast_coalesced((_ex, _exs), [_ex.get_device()] + ctx.worker_ids)
+                    tensors = comm.broadcast_coalesced(
+                        (_ex, _exs), [_ex.get_device()] + ctx.worker_ids
+                    )
                     for ts, queue in zip(tensors[1:], ctx.worker_queues):
                         queue.put(ts)
                 else:
@@ -81,7 +97,9 @@ class _SyncBatchNorm(Function):
         dz = dz.contiguous()
 
         # BN backward
-        dx, _dex, _dexs, dgamma, dbeta = _C.batchnorm_backward(dz, x, _ex, _exs, gamma, beta, ctx.eps)
+        dx, _dex, _dexs, dgamma, dbeta = _C.batchnorm_backward(
+            dz, x, _ex, _exs, gamma, beta, ctx.eps
+        )
 
         if ctx.training:
             if ctx.sync:
@@ -96,7 +114,9 @@ class _SyncBatchNorm(Function):
                     _dex = comm.gather(_dex).mean(0)
                     _dexs = comm.gather(_dexs).mean(0)
 
-                    tensors = comm.broadcast_coalesced((_dex, _dexs), [_dex.get_device()] + ctx.worker_ids)
+                    tensors = comm.broadcast_coalesced(
+                        (_dex, _dexs), [_dex.get_device()] + ctx.worker_ids
+                    )
                     for ts, queue in zip(tensors[1:], ctx.worker_queues):
                         queue.put(ts)
                 else:
@@ -107,7 +127,20 @@ class _SyncBatchNorm(Function):
             dx_ = _C.expectation_backward(x, _dex, _dexs)
             dx = dx + dx_
 
-        return dx, dgamma, dbeta, None, None, None, None, None, None, None, None, None
+        return (
+            dx,
+            dgamma,
+            dbeta,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
     @staticmethod
     def _parse_extra(ctx, extra):
@@ -153,8 +186,18 @@ class SyncBatchNorm(_BatchNorm):
         >>> output = net(input)
     """
 
-    def __init__(self, num_features, eps=1e-5, momentum=0.1, sync=True, activation='none', slope=0.01):
-        super(SyncBatchNorm, self).__init__(num_features, eps=eps, momentum=momentum, affine=True)
+    def __init__(
+        self,
+        num_features,
+        eps=1e-5,
+        momentum=0.1,
+        sync=True,
+        activation="none",
+        slope=0.01,
+    ):
+        super(SyncBatchNorm, self).__init__(
+            num_features, eps=eps, momentum=momentum, affine=True
+        )
         self.activation = activation
         self.slope = slope
         self.devices = list(range(torch.cuda.device_count()))
@@ -174,34 +217,52 @@ class SyncBatchNorm(_BatchNorm):
                 "is_master": True,
                 "master_queue": self.master_queue,
                 "worker_queues": self.worker_queues,
-                "worker_ids": self.worker_ids
+                "worker_ids": self.worker_ids,
             }
         else:
             # Worker mode
             extra = {
                 "is_master": False,
                 "master_queue": self.master_queue,
-                "worker_queue": self.worker_queues[self.worker_ids.index(x.get_device())]
+                "worker_queue": self.worker_queues[
+                    self.worker_ids.index(x.get_device())
+                ],
             }
 
-        return syncbatchnorm(x, self.weight, self.bias, self.running_mean, self.running_var,
-                             extra, self.sync, self.training, self.momentum, self.eps,
-                             self.activation, self.slope).view(input_shape)
+        return syncbatchnorm(
+            x,
+            self.weight,
+            self.bias,
+            self.running_mean,
+            self.running_var,
+            extra,
+            self.sync,
+            self.training,
+            self.momentum,
+            self.eps,
+            self.activation,
+            self.slope,
+        ).view(input_shape)
 
     def extra_repr(self):
-        if self.activation == 'none':
-            return 'sync={}'.format(self.sync)
+        if self.activation == "none":
+            return "sync={}".format(self.sync)
         else:
-            return 'sync={}, act={}, slope={}'.format(
-                self.sync, self.activation, self.slope)
+            return "sync={}, act={}, slope={}".format(
+                self.sync, self.activation, self.slope
+            )
 
 
 class BatchNorm1d(SyncBatchNorm):
     """BatchNorm1d is deprecated in favor of :class:`core.nn.sync_bn.SyncBatchNorm`."""
 
     def __init__(self, *args, **kwargs):
-        warnings.warn("core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}."
-                      .format('BatchNorm1d', SyncBatchNorm.__name__), DeprecationWarning)
+        warnings.warn(
+            "core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}.".format(
+                "BatchNorm1d", SyncBatchNorm.__name__
+            ),
+            DeprecationWarning,
+        )
         super(BatchNorm1d, self).__init__(*args, **kwargs)
 
 
@@ -209,8 +270,12 @@ class BatchNorm2d(SyncBatchNorm):
     """BatchNorm1d is deprecated in favor of :class:`core.nn.sync_bn.SyncBatchNorm`."""
 
     def __init__(self, *args, **kwargs):
-        warnings.warn("core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}."
-                      .format('BatchNorm2d', SyncBatchNorm.__name__), DeprecationWarning)
+        warnings.warn(
+            "core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}.".format(
+                "BatchNorm2d", SyncBatchNorm.__name__
+            ),
+            DeprecationWarning,
+        )
         super(BatchNorm2d, self).__init__(*args, **kwargs)
 
 
@@ -218,6 +283,10 @@ class BatchNorm3d(SyncBatchNorm):
     """BatchNorm1d is deprecated in favor of :class:`core.nn.sync_bn.SyncBatchNorm`."""
 
     def __init__(self, *args, **kwargs):
-        warnings.warn("core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}."
-                      .format('BatchNorm3d', SyncBatchNorm.__name__), DeprecationWarning)
+        warnings.warn(
+            "core.nn.sync_bn.{} is now deprecated in favor of core.nn.sync_bn.{}.".format(
+                "BatchNorm3d", SyncBatchNorm.__name__
+            ),
+            DeprecationWarning,
+        )
         super(BatchNorm3d, self).__init__(*args, **kwargs)

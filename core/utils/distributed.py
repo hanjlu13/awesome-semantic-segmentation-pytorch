@@ -4,15 +4,23 @@ This is useful when doing distributed training.
 """
 import math
 import pickle
+
 import torch
-import torch.utils.data as data
 import torch.distributed as dist
+import torch.utils.data as data
+from torch.utils.data.sampler import BatchSampler, Sampler
 
-from torch.utils.data.sampler import Sampler, BatchSampler
-
-__all__ = ['get_world_size', 'get_rank', 'synchronize', 'is_main_process',
-           'all_gather', 'make_data_sampler', 'make_batch_data_sampler',
-           'reduce_dict', 'reduce_loss_dict']
+__all__ = [
+    "get_world_size",
+    "get_rank",
+    "synchronize",
+    "is_main_process",
+    "all_gather",
+    "make_data_sampler",
+    "make_batch_data_sampler",
+    "reduce_dict",
+    "reduce_loss_dict",
+]
 
 
 # reference: https://github.com/facebookresearch/maskrcnn-benchmark/blob/master/maskrcnn_benchmark/utils/comm.py
@@ -158,10 +166,16 @@ def make_data_sampler(dataset, shuffle, distributed):
     return sampler
 
 
-def make_batch_data_sampler(sampler, images_per_batch, num_iters=None, start_iter=0):
-    batch_sampler = data.sampler.BatchSampler(sampler, images_per_batch, drop_last=True)
+def make_batch_data_sampler(
+    sampler, images_per_batch, num_iters=None, start_iter=0
+):
+    batch_sampler = data.sampler.BatchSampler(
+        sampler, images_per_batch, drop_last=True
+    )
     if num_iters is not None:
-        batch_sampler = IterationBasedBatchSampler(batch_sampler, num_iters, start_iter)
+        batch_sampler = IterationBasedBatchSampler(
+            batch_sampler, num_iters, start_iter
+        )
     return batch_sampler
 
 
@@ -184,17 +198,23 @@ class DistributedSampler(Sampler):
     def __init__(self, dataset, num_replicas=None, rank=None, shuffle=True):
         if num_replicas is None:
             if not dist.is_available():
-                raise RuntimeError("Requires distributed package to be available")
+                raise RuntimeError(
+                    "Requires distributed package to be available"
+                )
             num_replicas = dist.get_world_size()
         if rank is None:
             if not dist.is_available():
-                raise RuntimeError("Requires distributed package to be available")
+                raise RuntimeError(
+                    "Requires distributed package to be available"
+                )
             rank = dist.get_rank()
         self.dataset = dataset
         self.num_replicas = num_replicas
         self.rank = rank
         self.epoch = 0
-        self.num_samples = int(math.ceil(len(self.dataset) * 1.0 / self.num_replicas))
+        self.num_samples = int(
+            math.ceil(len(self.dataset) * 1.0 / self.num_replicas)
+        )
         self.total_size = self.num_samples * self.num_replicas
         self.shuffle = shuffle
 
@@ -213,7 +233,7 @@ class DistributedSampler(Sampler):
 
         # subsample
         offset = self.num_samples * self.rank
-        indices = indices[offset: offset + self.num_samples]
+        indices = indices[offset : offset + self.num_samples]
         assert len(indices) == self.num_samples
 
         return iter(indices)
@@ -254,5 +274,5 @@ class IterationBasedBatchSampler(BatchSampler):
         return self.num_iterations
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     pass

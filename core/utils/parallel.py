@@ -1,12 +1,13 @@
 """Utils for Semantic Segmentation"""
 import threading
+
 import torch
 import torch.cuda.comm as comm
-from torch.nn.parallel.data_parallel import DataParallel
-from torch.nn.parallel._functions import Broadcast
 from torch.autograd import Function
+from torch.nn.parallel._functions import Broadcast
+from torch.nn.parallel.data_parallel import DataParallel
 
-__all__ = ['DataParallelModel', 'DataParallelCriterion']
+__all__ = ["DataParallelModel", "DataParallelCriterion"]
 
 
 class Reduce(Function):
@@ -77,7 +78,7 @@ class DataParallelCriterion(DataParallel):
         targets, kwargs = self.scatter(targets, kwargs, self.device_ids)
         if len(self.device_ids) == 1:
             return self.module(inputs, *targets[0], **kwargs[0])
-        replicas = self.replicate(self.module, self.device_ids[:len(inputs)])
+        replicas = self.replicate(self.module, self.device_ids[: len(inputs)])
         outputs = criterion_parallel_apply(replicas, inputs, targets, kwargs)
         return Reduce.apply(*outputs) / len(outputs)
 
@@ -98,7 +99,9 @@ def get_a_var(obj):
     return None
 
 
-def criterion_parallel_apply(modules, inputs, targets, kwargs_tup=None, devices=None):
+def criterion_parallel_apply(
+    modules, inputs, targets, kwargs_tup=None, devices=None
+):
     r"""Applies each `module` in :attr:`modules` in parallel on arguments
     contained in :attr:`inputs` (positional), attr:'targets' (positional) and :attr:`kwargs_tup` (keyword)
     on each of :attr:`devices`.
@@ -141,10 +144,14 @@ def criterion_parallel_apply(modules, inputs, targets, kwargs_tup=None, devices=
                 results[i] = e
 
     if len(modules) > 1:
-        threads = [threading.Thread(target=_worker,
-                                    args=(i, module, input, target, kwargs, device))
-                   for i, (module, input, target, kwargs, device) in
-                   enumerate(zip(modules, inputs, targets, kwargs_tup, devices))]
+        threads = [
+            threading.Thread(
+                target=_worker, args=(i, module, input, target, kwargs, device)
+            )
+            for i, (module, input, target, kwargs, device) in enumerate(
+                zip(modules, inputs, targets, kwargs_tup, devices)
+            )
+        ]
 
         for thread in threads:
             thread.start()

@@ -9,19 +9,32 @@
 
 """Synchronized Cross-GPU Batch Normalization functions"""
 import torch.cuda.comm as comm
-
 from torch.autograd import Function
 from torch.autograd.function import once_differentiable
+
 from core.nn.sync_bn import lib
 
-__all__ = ['syncbatchnorm', 'inp_syncbatchnorm']
+__all__ = ["syncbatchnorm", "inp_syncbatchnorm"]
 
 
 class syncbatchnorm_(Function):
     @classmethod
-    def forward(cls, ctx, x, gamma, beta, running_mean, running_var,
-                extra, sync=True, training=True, momentum=0.1, eps=1e-05,
-                activation="none", slope=0.01):
+    def forward(
+        cls,
+        ctx,
+        x,
+        gamma,
+        beta,
+        running_mean,
+        running_var,
+        extra,
+        sync=True,
+        training=True,
+        momentum=0.1,
+        eps=1e-05,
+        activation="none",
+        slope=0.01,
+    ):
         # save context
         cls._parse_extra(ctx, extra)
         ctx.sync = sync
@@ -30,7 +43,7 @@ class syncbatchnorm_(Function):
         ctx.eps = eps
         ctx.activation = activation
         ctx.slope = slope
-        assert activation == 'none'
+        assert activation == "none"
 
         # continous inputs
         x = x.contiguous()
@@ -55,7 +68,9 @@ class syncbatchnorm_(Function):
                     _ex = comm.gather(_ex).mean(0)
                     _exs = comm.gather(_exs).mean(0)
 
-                    tensors = comm.broadcast_coalesced((_ex, _exs), [_ex.get_device()] + ctx.worker_ids)
+                    tensors = comm.broadcast_coalesced(
+                        (_ex, _exs), [_ex.get_device()] + ctx.worker_ids
+                    )
                     for ts, queue in zip(tensors[1:], ctx.worker_queues):
                         queue.put(ts)
                 else:
@@ -92,7 +107,9 @@ class syncbatchnorm_(Function):
 
         # BN backward
         if dz.is_cuda:
-            dx, _dex, _dexs, dgamma, dbeta = lib.gpu.batchnorm_backward(dz, x, _ex, _exs, gamma, beta, ctx.eps)
+            dx, _dex, _dexs, dgamma, dbeta = lib.gpu.batchnorm_backward(
+                dz, x, _ex, _exs, gamma, beta, ctx.eps
+            )
         else:
             raise NotImplemented
 
@@ -109,7 +126,9 @@ class syncbatchnorm_(Function):
                     _dex = comm.gather(_dex).mean(0)
                     _dexs = comm.gather(_dexs).mean(0)
 
-                    tensors = comm.broadcast_coalesced((_dex, _dexs), [_dex.get_device()] + ctx.worker_ids)
+                    tensors = comm.broadcast_coalesced(
+                        (_dex, _dexs), [_dex.get_device()] + ctx.worker_ids
+                    )
                     for ts, queue in zip(tensors[1:], ctx.worker_queues):
                         queue.put(ts)
                 else:
@@ -123,7 +142,20 @@ class syncbatchnorm_(Function):
                 raise NotImplemented
             dx = dx + dx_
 
-        return dx, dgamma, dbeta, None, None, None, None, None, None, None, None, None
+        return (
+            dx,
+            dgamma,
+            dbeta,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
     @staticmethod
     def _parse_extra(ctx, extra):
@@ -144,7 +176,7 @@ def _act_forward(ctx, x):
         else:
             raise NotImplemented
     else:
-        assert ctx.activation == 'none'
+        assert ctx.activation == "none"
 
 
 def _act_backward(ctx, x, dx):
@@ -154,14 +186,27 @@ def _act_backward(ctx, x, dx):
         else:
             raise NotImplemented
     else:
-        assert ctx.activation == 'none'
+        assert ctx.activation == "none"
 
 
 class inp_syncbatchnorm_(Function):
     @classmethod
-    def forward(cls, ctx, x, gamma, beta, running_mean, running_var,
-                extra, sync=True, training=True, momentum=0.1, eps=1e-5,
-                activation='none', slope=0.01):
+    def forward(
+        cls,
+        ctx,
+        x,
+        gamma,
+        beta,
+        running_mean,
+        running_var,
+        extra,
+        sync=True,
+        training=True,
+        momentum=0.1,
+        eps=1e-5,
+        activation="none",
+        slope=0.01,
+    ):
         # save context
         cls._parse_extra(ctx, extra)
         ctx.sync = sync
@@ -194,7 +239,9 @@ class inp_syncbatchnorm_(Function):
                     _ex = comm.gather(_ex).mean(0)
                     _exs = comm.gather(_exs).mean(0)
 
-                    tensors = comm.broadcast_coalesced((_ex, _exs), [_ex.get_device()] + ctx.worker_ids)
+                    tensors = comm.broadcast_coalesced(
+                        (_ex, _exs), [_ex.get_device()] + ctx.worker_ids
+                    )
                     for ts, queue in zip(tensors[1:], ctx.worker_queues):
                         queue.put(ts)
                 else:
@@ -237,7 +284,9 @@ class inp_syncbatchnorm_(Function):
 
         # BN backward
         if dz.is_cuda:
-            dx, _dex, _dexs, dgamma, dbeta = lib.gpu.batchnorm_inp_backward(dz, z, _ex, _exs, gamma, beta, ctx.eps)
+            dx, _dex, _dexs, dgamma, dbeta = lib.gpu.batchnorm_inp_backward(
+                dz, z, _ex, _exs, gamma, beta, ctx.eps
+            )
         else:
             raise NotImplemented
 
@@ -254,7 +303,9 @@ class inp_syncbatchnorm_(Function):
                     _dex = comm.gather(_dex).mean(0)
                     _dexs = comm.gather(_dexs).mean(0)
 
-                    tensors = comm.broadcast_coalesced((_dex, _dexs), [_dex.get_device()] + ctx.worker_ids)
+                    tensors = comm.broadcast_coalesced(
+                        (_dex, _dexs), [_dex.get_device()] + ctx.worker_ids
+                    )
                     for ts, queue in zip(tensors[1:], ctx.worker_queues):
                         queue.put(ts)
                 else:
@@ -263,11 +314,26 @@ class inp_syncbatchnorm_(Function):
                     ctx.worker_queue.task_done()
 
             if z.is_cuda:
-                lib.gpu.expectation_inp_backward(dx, z, _dex, _dexs, _ex, _exs, gamma, beta, ctx.eps)
+                lib.gpu.expectation_inp_backward(
+                    dx, z, _dex, _dexs, _ex, _exs, gamma, beta, ctx.eps
+                )
             else:
                 raise NotImplemented
 
-        return dx, dgamma, dbeta, None, None, None, None, None, None, None, None, None
+        return (
+            dx,
+            dgamma,
+            dbeta,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
 
     @staticmethod
     def _parse_extra(ctx, extra):

@@ -3,67 +3,109 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .segbase import SegBaseModel
 from .fcn import _FCNHead
+from .segbase import SegBaseModel
 
-__all__ = ['EncNet', 'EncModule', 'get_encnet', 'get_encnet_resnet50_ade',
-           'get_encnet_resnet101_ade', 'get_encnet_resnet152_ade']
+__all__ = [
+    "EncNet",
+    "EncModule",
+    "get_encnet",
+    "get_encnet_resnet50_ade",
+    "get_encnet_resnet101_ade",
+    "get_encnet_resnet152_ade",
+]
 
 
 class EncNet(SegBaseModel):
-    def __init__(self, nclass, backbone='resnet50', aux=True, se_loss=True, lateral=False,
-                 pretrained_base=True, **kwargs):
-        super(EncNet, self).__init__(nclass, aux, backbone, pretrained_base=pretrained_base, **kwargs)
-        self.head = _EncHead(2048, nclass, se_loss=se_loss, lateral=lateral, **kwargs)
+    def __init__(
+        self,
+        nclass,
+        backbone="resnet50",
+        aux=True,
+        se_loss=True,
+        lateral=False,
+        pretrained_base=True,
+        **kwargs
+    ):
+        super(EncNet, self).__init__(
+            nclass, aux, backbone, pretrained_base=pretrained_base, **kwargs
+        )
+        self.head = _EncHead(
+            2048, nclass, se_loss=se_loss, lateral=lateral, **kwargs
+        )
         if aux:
             self.auxlayer = _FCNHead(1024, nclass, **kwargs)
 
-        self.__setattr__('exclusive', ['head', 'auxlayer'] if aux else ['head'])
+        self.__setattr__("exclusive", ["head", "auxlayer"] if aux else ["head"])
 
     def forward(self, x):
         size = x.size()[2:]
         features = self.base_forward(x)
 
         x = list(self.head(*features))
-        x[0] = F.interpolate(x[0], size, mode='bilinear', align_corners=True)
+        x[0] = F.interpolate(x[0], size, mode="bilinear", align_corners=True)
         if self.aux:
             auxout = self.auxlayer(features[2])
-            auxout = F.interpolate(auxout, size, mode='bilinear', align_corners=True)
+            auxout = F.interpolate(
+                auxout, size, mode="bilinear", align_corners=True
+            )
             x.append(auxout)
         return tuple(x)
 
 
 class _EncHead(nn.Module):
-    def __init__(self, in_channels, nclass, se_loss=True, lateral=True,
-                 norm_layer=nn.BatchNorm2d, norm_kwargs=None, **kwargs):
+    def __init__(
+        self,
+        in_channels,
+        nclass,
+        se_loss=True,
+        lateral=True,
+        norm_layer=nn.BatchNorm2d,
+        norm_kwargs=None,
+        **kwargs
+    ):
         super(_EncHead, self).__init__()
         self.lateral = lateral
         self.conv5 = nn.Sequential(
             nn.Conv2d(in_channels, 512, 3, padding=1, bias=False),
             norm_layer(512, **({} if norm_kwargs is None else norm_kwargs)),
-            nn.ReLU(True)
+            nn.ReLU(True),
         )
         if lateral:
-            self.connect = nn.ModuleList([
-                nn.Sequential(
-                    nn.Conv2d(512, 512, 1, bias=False),
-                    norm_layer(512, **({} if norm_kwargs is None else norm_kwargs)),
-                    nn.ReLU(True)),
-                nn.Sequential(
-                    nn.Conv2d(1024, 512, 1, bias=False),
-                    norm_layer(512, **({} if norm_kwargs is None else norm_kwargs)),
-                    nn.ReLU(True)),
-            ])
+            self.connect = nn.ModuleList(
+                [
+                    nn.Sequential(
+                        nn.Conv2d(512, 512, 1, bias=False),
+                        norm_layer(
+                            512, **({} if norm_kwargs is None else norm_kwargs)
+                        ),
+                        nn.ReLU(True),
+                    ),
+                    nn.Sequential(
+                        nn.Conv2d(1024, 512, 1, bias=False),
+                        norm_layer(
+                            512, **({} if norm_kwargs is None else norm_kwargs)
+                        ),
+                        nn.ReLU(True),
+                    ),
+                ]
+            )
             self.fusion = nn.Sequential(
                 nn.Conv2d(3 * 512, 512, 3, padding=1, bias=False),
                 norm_layer(512, **({} if norm_kwargs is None else norm_kwargs)),
-                nn.ReLU(True)
+                nn.ReLU(True),
             )
-        self.encmodule = EncModule(512, nclass, ncodes=32, se_loss=se_loss,
-                                   norm_layer=norm_layer, norm_kwargs=norm_kwargs, **kwargs)
+        self.encmodule = EncModule(
+            512,
+            nclass,
+            ncodes=32,
+            se_loss=se_loss,
+            norm_layer=norm_layer,
+            norm_kwargs=norm_kwargs,
+            **kwargs
+        )
         self.conv6 = nn.Sequential(
-            nn.Dropout(0.1, False),
-            nn.Conv2d(512, nclass, 1)
+            nn.Dropout(0.1, False), nn.Conv2d(512, nclass, 1)
         )
 
     def forward(self, *inputs):
@@ -78,22 +120,31 @@ class _EncHead(nn.Module):
 
 
 class EncModule(nn.Module):
-    def __init__(self, in_channels, nclass, ncodes=32, se_loss=True,
-                 norm_layer=nn.BatchNorm2d, norm_kwargs=None, **kwargs):
+    def __init__(
+        self,
+        in_channels,
+        nclass,
+        ncodes=32,
+        se_loss=True,
+        norm_layer=nn.BatchNorm2d,
+        norm_kwargs=None,
+        **kwargs
+    ):
         super(EncModule, self).__init__()
         self.se_loss = se_loss
         self.encoding = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, 1, bias=False),
-            norm_layer(in_channels, **({} if norm_kwargs is None else norm_kwargs)),
+            norm_layer(
+                in_channels, **({} if norm_kwargs is None else norm_kwargs)
+            ),
             nn.ReLU(True),
             Encoding(D=in_channels, K=ncodes),
             nn.BatchNorm1d(ncodes),
             nn.ReLU(True),
-            Mean(dim=1)
+            Mean(dim=1),
         )
         self.fc = nn.Sequential(
-            nn.Linear(in_channels, in_channels),
-            nn.Sigmoid()
+            nn.Linear(in_channels, in_channels), nn.Sigmoid()
         )
         if self.se_loss:
             self.selayer = nn.Linear(in_channels, nclass)
@@ -119,13 +170,13 @@ class Encoding(nn.Module):
         self.reset_params()
 
     def reset_params(self):
-        std1 = 1. / ((self.K * self.D) ** (1 / 2))
+        std1 = 1.0 / ((self.K * self.D) ** (1 / 2))
         self.codewords.data.uniform_(-std1, std1)
         self.scale.data.uniform_(-1, 0)
 
     def forward(self, X):
         # input X is a 4D tensor
-        assert (X.size(1) == self.D)
+        assert X.size(1) == self.D
         B, D = X.size(0), self.D
         if X.dim() == 3:
             # BxDxN -> BxNxD
@@ -134,7 +185,7 @@ class Encoding(nn.Module):
             # BxDxHxW -> Bx(HW)xD
             X = X.view(B, D, -1).transpose(1, 2).contiguous()
         else:
-            raise RuntimeError('Encoding Layer unknown input dims!')
+            raise RuntimeError("Encoding Layer unknown input dims!")
         # assignment weights BxNxK
         A = F.softmax(self.scale_l2(X, self.codewords, self.scale), dim=2)
         # aggregate
@@ -142,9 +193,17 @@ class Encoding(nn.Module):
         return E
 
     def __repr__(self):
-        return self.__class__.__name__ + '(' \
-               + 'N x' + str(self.D) + '=>' + str(self.K) + 'x' \
-               + str(self.D) + ')'
+        return (
+            self.__class__.__name__
+            + "("
+            + "N x"
+            + str(self.D)
+            + "=>"
+            + str(self.K)
+            + "x"
+            + str(self.D)
+            + ")"
+        )
 
     @staticmethod
     def scale_l2(X, C, S):
@@ -175,38 +234,57 @@ class Mean(nn.Module):
         return input.mean(self.dim, self.keep_dim)
 
 
-def get_encnet(dataset='pascal_voc', backbone='resnet50', pretrained=False, root='~/.torch/models',
-               pretrained_base=True, **kwargs):
+def get_encnet(
+    dataset="pascal_voc",
+    backbone="resnet50",
+    pretrained=False,
+    root="~/.torch/models",
+    pretrained_base=True,
+    **kwargs
+):
     acronyms = {
-        'pascal_voc': 'pascal_voc',
-        'pascal_aug': 'pascal_aug',
-        'ade20k': 'ade',
-        'coco': 'coco',
-        'citys': 'citys',
+        "pascal_voc": "pascal_voc",
+        "pascal_aug": "pascal_aug",
+        "ade20k": "ade",
+        "coco": "coco",
+        "citys": "citys",
     }
     from ..data.dataloader import datasets
-    model = EncNet(datasets[dataset].NUM_CLASS, backbone=backbone, pretrained_base=pretrained_base, **kwargs)
+
+    model = EncNet(
+        datasets[dataset].NUM_CLASS,
+        backbone=backbone,
+        pretrained_base=pretrained_base,
+        **kwargs
+    )
     if pretrained:
         from .model_store import get_model_file
-        device = torch.device(kwargs['local_rank'])
-        model.load_state_dict(torch.load(get_model_file('encnet_%s_%s' % (backbone, acronyms[dataset]), root=root),
-                              map_location=device))
+
+        device = torch.device(kwargs["local_rank"])
+        model.load_state_dict(
+            torch.load(
+                get_model_file(
+                    "encnet_%s_%s" % (backbone, acronyms[dataset]), root=root
+                ),
+                map_location=device,
+            )
+        )
     return model
 
 
 def get_encnet_resnet50_ade(**kwargs):
-    return get_encnet('ade20k', 'resnet50', **kwargs)
+    return get_encnet("ade20k", "resnet50", **kwargs)
 
 
 def get_encnet_resnet101_ade(**kwargs):
-    return get_encnet('ade20k', 'resnet101', **kwargs)
+    return get_encnet("ade20k", "resnet101", **kwargs)
 
 
 def get_encnet_resnet152_ade(**kwargs):
-    return get_encnet('ade20k', 'resnet152', **kwargs)
+    return get_encnet("ade20k", "resnet152", **kwargs)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     img = torch.randn(2, 3, 224, 224)
     model = get_encnet_resnet50_ade()
     outputs = model(img)

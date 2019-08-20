@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.utils.model_zoo as model_zoo
+from collections import OrderedDict
 
 __all__ = [
     "ResNetV1b",
@@ -21,6 +22,15 @@ model_urls = {
     "resnet101": "https://download.pytorch.org/models/resnet101-5d3b4d8f.pth",
     "resnet152": "https://download.pytorch.org/models/resnet152-b121ed2d.pth",
 }
+
+
+def remove_redudant_layers(model):
+    layers = OrderedDict()
+    redundant_layer = ["avgpool", "fc"]
+    for _name, _layer in model.named_children():
+        if _name not in redundant_layer:
+            layers[_name] = _layer
+    return nn.Sequential(layers)
 
 
 class BasicBlockV1b(nn.Module):
@@ -344,7 +354,7 @@ def resnet50_v1s(pretrained=False, root="~/.torch/models", **kwargs):
         model.load_state_dict(
             torch.load(get_resnet_file("resnet50", root=root)), strict=False
         )
-    return model
+    return remove_redudant_layers(model)
 
 
 def resnet101_v1s(pretrained=False, root="~/.torch/models", **kwargs):
@@ -355,7 +365,7 @@ def resnet101_v1s(pretrained=False, root="~/.torch/models", **kwargs):
         model.load_state_dict(
             torch.load(get_resnet_file("resnet101", root=root)), strict=False
         )
-    return model
+    return remove_redudant_layers(model)
 
 
 def resnet152_v1s(pretrained=False, root="~/.torch/models", **kwargs):

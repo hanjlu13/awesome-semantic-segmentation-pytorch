@@ -1,249 +1,35 @@
-import argparse
-import datetime
-import os
-import shutil
-import sys
-import time
-
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn as nn
+import time
+import datetime
 import torch.utils.data as data
+import os
 from torchvision import transforms
 
 from core.data.dataloader import get_segmentation_dataset
 from core.models.model_zoo import get_segmentation_model
 from core.utils.distributed import *
-from core.utils.logger import setup_logger
+
 from core.utils.loss import get_segmentation_loss
 from core.utils.lr_scheduler import WarmupPolyLR
 from core.utils.score import SegmentationMetric
-
-cur_path = os.path.abspath(os.path.dirname(__file__))
-root_path = os.path.split(cur_path)[0]
-sys.path.append(root_path)
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Semantic Segmentation Training With Pytorch"
-    )
-    # model and dataset
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="fcn",
-        choices=[
-            "fcn32s",
-            "fcn16s",
-            "fcn8s",
-            "fcn",
-            "psp",
-            "deeplabv3",
-            "deeplabv3_plus",
-            "danet",
-            "denseaspp",
-            "bisenet",
-            "encnet",
-            "dunet",
-            "icnet",
-            "enet",
-            "ocnet",
-            "ccnet",
-            "psanet",
-            "cgnet",
-            "espnet",
-            "lednet",
-            "dfanet",
-        ],
-        help="model name (default: fcn32s)",
-    )
-    parser.add_argument(
-        "--backbone",
-        type=str,
-        default="resnet50",
-        choices=[
-            "vgg16",
-            "resnet18",
-            "resnet50",
-            "resnet101",
-            "resnet152",
-            "densenet121",
-            "densenet161",
-            "densenet169",
-            "densenet201",
-        ],
-        help="backbone name (default: vgg16)",
-    )
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        default="pascal_voc",
-        choices=["pascal_voc", "pascal_aug", "ade20k", "citys", "sbu"],
-        help="dataset name (default: pascal_voc)",
-    )
-    parser.add_argument(
-        "--base-size", type=int, default=520, help="base image size"
-    )
-    parser.add_argument(
-        "--crop-size", type=int, default=480, help="crop image size"
-    )
-    parser.add_argument(
-        "--workers",
-        "-j",
-        type=int,
-        default=4,
-        metavar="N",
-        help="dataloader threads",
-    )
-    # training hyper params
-    parser.add_argument("--jpu", action="store_true", default=False, help="JPU")
-    parser.add_argument(
-        "--use-ohem",
-        type=bool,
-        default=False,
-        help="OHEM Loss for cityscapes dataset",
-    )
-    parser.add_argument(
-        "--aux", action="store_true", default=False, help="Auxiliary loss"
-    )
-    parser.add_argument(
-        "--aux-weight", type=float, default=0.4, help="auxiliary loss weight"
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=4,
-        metavar="N",
-        help="input batch size for training (default: 8)",
-    )
-    parser.add_argument(
-        "--start_epoch",
-        type=int,
-        default=0,
-        metavar="N",
-        help="start epochs (default:0)",
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=50,
-        metavar="N",
-        help="number of epochs to train (default: 50)",
-    )
-    parser.add_argument(
-        "--lr",
-        type=float,
-        default=1e-4,
-        metavar="LR",
-        help="learning rate (default: 1e-4)",
-    )
-    parser.add_argument(
-        "--momentum",
-        type=float,
-        default=0.9,
-        metavar="M",
-        help="momentum (default: 0.9)",
-    )
-    parser.add_argument(
-        "--weight-decay",
-        type=float,
-        default=1e-4,
-        metavar="M",
-        help="w-decay (default: 5e-4)",
-    )
-    parser.add_argument(
-        "--warmup-iters", type=int, default=0, help="warmup iters"
-    )
-    parser.add_argument(
-        "--warmup-factor",
-        type=float,
-        default=1.0 / 3,
-        help="lr = warmup_factor * lr",
-    )
-    parser.add_argument(
-        "--warmup-method", type=str, default="linear", help="method of warmup"
-    )
-    # cuda setting
-    parser.add_argument(
-        "--no-cuda",
-        action="store_true",
-        default=False,
-        help="disables CUDA training",
-    )
-    parser.add_argument("--local_rank", type=int, default=0)
-    # checkpoint and log
-    parser.add_argument(
-        "--resume",
-        type=str,
-        default=None,
-        help="put the path to resuming file if needed",
-    )
-    parser.add_argument(
-        "--save-dir",
-        default="~/.torch/models",
-        help="Directory for saving checkpoint models",
-    )
-    parser.add_argument(
-        "--save-epoch",
-        type=int,
-        default=10,
-        help="save model every checkpoint-epoch",
-    )
-    parser.add_argument(
-        "--log-dir",
-        default="../runs/logs/",
-        help="Directory for saving checkpoint models",
-    )
-    parser.add_argument(
-        "--log-iter", type=int, default=10, help="print log every log-iter"
-    )
-    # evaluation only
-    parser.add_argument(
-        "--val-epoch",
-        type=int,
-        default=1,
-        help="run validation every val-epoch",
-    )
-    parser.add_argument(
-        "--skip-val",
-        action="store_true",
-        default=False,
-        help="skip validation during training",
-    )
-    args = parser.parse_args()
-
-    # default settings for epochs, batch_size and lr
-    if args.epochs is None:
-        epoches = {
-            "coco": 30,
-            "pascal_aug": 80,
-            "pascal_voc": 50,
-            "pcontext": 80,
-            "ade20k": 160,
-            "citys": 120,
-            "sbu": 160,
-        }
-        args.epochs = epoches[args.dataset.lower()]
-    if args.lr is None:
-        lrs = {
-            "coco": 0.004,
-            "pascal_aug": 0.001,
-            "pascal_voc": 0.0001,
-            "pcontext": 0.001,
-            "ade20k": 0.01,
-            "citys": 0.01,
-            "sbu": 0.001,
-        }
-        args.lr = lrs[args.dataset.lower()] / 8 * args.batch_size
-    return args
+from core.utils.tbwriter import TensorboardWriter as TBWriter
+from core.utils.metric_logger import MetricLogger
+import shutil
 
 
 class Trainer(object):
-    def __init__(self, args):
+    def __init__(self, args, logger):
         self.args = args
+        self.logger = logger
+        if get_rank() == 0:
+            TBWriter.init(
+                os.path.join(args.project_dir, args.task_dir, "tbevents")
+            )
         self.device = torch.device(args.device)
 
+        self.meters = MetricLogger(delimiter="  ")
         # image transform
         input_transform = transforms.Compose(
             [
@@ -258,6 +44,7 @@ class Trainer(object):
             "transform": input_transform,
             "base_size": args.base_size,
             "crop_size": args.crop_size,
+            "root": args.dataroot,
         }
         train_dataset = get_segmentation_dataset(
             args.dataset, split="train", mode="train", **data_kwargs
@@ -339,7 +126,7 @@ class Trainer(object):
                 params_list.append(
                     {
                         "params": getattr(self.model, module).parameters(),
-                        "lr": args.lr * 10,
+                        "lr": args.lr * args.lr_scale,
                     }
                 )
         self.optimizer = torch.optim.SGD(
@@ -380,16 +167,18 @@ class Trainer(object):
         )
         save_per_iters = self.args.save_epoch * self.args.iters_per_epoch
         start_time = time.time()
-        logger.info(
+        self.logger.info(
             "Start training, Total Epochs: {:d} = Total Iterations {:d}".format(
                 epochs, max_iters
             )
         )
 
         self.model.train()
+        end = time.time()
         for iteration, (images, targets, _) in enumerate(self.train_loader):
             iteration = iteration + 1
             self.lr_scheduler.step()
+            data_time = time.time() - end
 
             images = images.to(self.device)
             targets = targets.to(self.device)
@@ -406,6 +195,11 @@ class Trainer(object):
             self.optimizer.zero_grad()
             losses.backward()
             self.optimizer.step()
+            batch_time = time.time() - end
+            end = time.time()
+            self.meters.update(
+                data_time=data_time, batch_time=batch_time, loss=losses_reduced
+            )
 
             eta_seconds = ((time.time() - start_time) / iteration) * (
                 max_iters - iteration
@@ -413,34 +207,77 @@ class Trainer(object):
             eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
 
             if iteration % log_per_iters == 0 and save_to_disk:
-                logger.info(
-                    "Iters: {:d}/{:d} || Lr: {:.6f} || Loss: {:.4f} || Cost Time: {} || Estimated Time: {}".format(
-                        iteration,
-                        max_iters,
-                        self.optimizer.param_groups[0]["lr"],
-                        losses_reduced.item(),
-                        str(
-                            datetime.timedelta(
-                                seconds=int(time.time() - start_time)
-                            )
-                        ),
-                        eta_string,
+                self.logger.info(
+                    self.meters.delimiter.join(
+                        [
+                            "eta: {eta}",
+                            "iter: {iter}",
+                            "{meters}",
+                            "lr: {lr:.6f}",
+                            "max mem: {memory:.0f}",
+                        ]
+                    ).format(
+                        eta=eta_string,
+                        iter=iteration,
+                        meters=(self.meters),
+                        lr=self.optimizer.param_groups[0]["lr"],
+                        memory=torch.cuda.max_memory_allocated()
+                        / 1024.0
+                        / 1024.0,
                     )
                 )
+                if is_main_process():
+                    # write train loss and lr
+                    TBWriter.write_scalar(
+                        ["train/loss", "train/lr", "train/mem"],
+                        [
+                            losses_reduced,
+                            self.optimizer.param_groups[0]["lr"],
+                            torch.cuda.max_memory_allocated() / 1024.0 / 1024.0,
+                        ],
+                        iter=iteration,
+                    )
+                    # write time
+                    TBWriter.write_scalars(
+                        ["train/time"],
+                        [self.meters.get_metric(["data_time", "batch_time"])],
+                        iter=iteration,
+                    )
 
             if iteration % save_per_iters == 0 and save_to_disk:
                 save_checkpoint(self.model, self.args, is_best=False)
 
             if not self.args.skip_val and iteration % val_per_iters == 0:
-                self.validation()
+                pixAcc, mIoU = self.validation()
+                reduced_pixAcc = reduce_tensor(pixAcc)
+                reduced_mIoU = reduce_tensor(mIoU)
+                new_pred = (reduced_pixAcc + reduced_mIoU) / 2
+                new_pred = float(new_pred.cpu().numpy())
+
+                if new_pred > self.best_pred:
+                    is_best = True
+                    self.best_pred = new_pred
+
+                if is_main_process():
+                    TBWriter.write_scalar(
+                        ["val/PixelACC", "val/mIoU"],
+                        [
+                            reduced_pixAcc.cpu().numpy(),
+                            reduced_mIoU.cpu().numpy(),
+                        ],
+                        iter=iteration,
+                    )
+                    save_checkpoint(self.model, self.args, is_best)
+                synchronize()
                 self.model.train()
 
-        save_checkpoint(self.model, self.args, is_best=False)
+        if is_main_process():
+            save_checkpoint(self.model, self.args, is_best=False)
         total_training_time = time.time() - start_time
         total_training_str = str(
             datetime.timedelta(seconds=total_training_time)
         )
-        logger.info(
+        self.logger.info(
             "Total training time: {} ({:.4f}s / it)".format(
                 total_training_str, total_training_time / max_iters
             )
@@ -463,24 +300,25 @@ class Trainer(object):
             with torch.no_grad():
                 outputs = model(image)
             self.metric.update(outputs[0], target)
-            pixAcc, mIoU = self.metric.get()
-            logger.info(
-                "Sample: {:d}, Validation pixAcc: {:.3f}, mIoU: {:.3f}".format(
-                    i + 1, pixAcc, mIoU
-                )
-            )
+            # pixAcc, mIoU = self.metric.get()
+            # logger.info(
+            # "Sample: {:d}, Validation pixAcc: {:.3f}, mIoU: {:.3f}".format(
+            # i + 1, pixAcc, mIoU
+            # )
+            # )
+        pixAcc, mIoU = self.metric.get()
 
-        new_pred = (pixAcc + mIoU) / 2
-        if new_pred > self.best_pred:
-            is_best = True
-            self.best_pred = new_pred
-        save_checkpoint(self.model, self.args, is_best)
-        synchronize()
+        return (
+            torch.tensor(pixAcc).to(self.device),
+            torch.tensor(mIoU).to(self.device),
+        )
 
 
 def save_checkpoint(model, args, is_best=False):
     """Save Checkpoint"""
-    directory = os.path.expanduser(args.save_dir)
+    directory = os.path.join(
+        os.path.expanduser(args.project_dir), args.task_dir, "ckpts"
+    )
     if not os.path.exists(directory):
         os.makedirs(directory)
     filename = "{}_{}_{}.pth".format(args.model, args.backbone, args.dataset)
@@ -495,42 +333,3 @@ def save_checkpoint(model, args, is_best=False):
         )
         best_filename = os.path.join(directory, best_filename)
         shutil.copyfile(filename, best_filename)
-
-
-if __name__ == "__main__":
-    args = parse_args()
-
-    # reference maskrcnn-benchmark
-    num_gpus = (
-        int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
-    )
-    args.num_gpus = num_gpus
-    args.distributed = num_gpus > 1
-    if not args.no_cuda and torch.cuda.is_available():
-        cudnn.benchmark = True
-        args.device = "cuda"
-    else:
-        args.distributed = False
-        args.device = "cpu"
-    if args.distributed:
-        torch.cuda.set_device(args.local_rank)
-        torch.distributed.init_process_group(
-            backend="nccl", init_method="env://"
-        )
-        synchronize()
-    args.lr = args.lr * num_gpus
-
-    logger = setup_logger(
-        "semantic_segmentation",
-        args.log_dir,
-        get_rank(),
-        filename="{}_{}_{}_log.txt".format(
-            args.model, args.backbone, args.dataset
-        ),
-    )
-    logger.info("Using {} GPUs".format(num_gpus))
-    logger.info(args)
-
-    trainer = Trainer(args)
-    trainer.train()
-    torch.cuda.empty_cache()

@@ -73,7 +73,9 @@ class VOCSegmentation(SegmentationDataset):
                 self.images.append(_image)
                 if split != "test":
                     _mask = os.path.join(_mask_dir, line.rstrip("\n") + ".png")
-                    assert os.path.isfile(_mask)
+                    assert os.path.isfile(_mask), "invalid mask: {}".format(
+                        _mask
+                    )
                     self.masks.append(_mask)
 
         if split != "test":

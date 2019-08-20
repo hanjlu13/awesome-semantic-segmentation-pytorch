@@ -20,6 +20,7 @@ __all__ = [
     "make_batch_data_sampler",
     "reduce_dict",
     "reduce_loss_dict",
+    "reduce_tensor",
 ]
 
 
@@ -274,5 +275,8 @@ class IterationBasedBatchSampler(BatchSampler):
         return self.num_iterations
 
 
-if __name__ == "__main__":
-    pass
+def reduce_tensor(tensor):
+    rt = tensor.clone()
+    dist.all_reduce(rt, op=dist.ReduceOp.SUM)
+    rt /= get_world_size()
+    return rt

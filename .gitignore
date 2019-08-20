@@ -126,3 +126,10 @@ eval/
 
 # nn
 nn/sync_bn/
+
+# vscode
+.vscode/
+
+private/
+
+models/

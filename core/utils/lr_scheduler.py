@@ -135,7 +135,6 @@ class WarmupMultiStepLR(torch.optim.lr_scheduler._LRScheduler):
         warmup_method="linear",
         last_epoch=-1,
     ):
-        super(WarmupMultiStepLR, self).__init__(optimizer, last_epoch)
         if not list(milestones) == sorted(milestones):
             raise ValueError(
                 "Milestones should be a list of" " increasing integers. Got {}",
@@ -153,6 +152,7 @@ class WarmupMultiStepLR(torch.optim.lr_scheduler._LRScheduler):
         self.warmup_factor = warmup_factor
         self.warmup_iters = warmup_iters
         self.warmup_method = warmup_method
+        super(WarmupMultiStepLR, self).__init__(optimizer, last_epoch)
 
     def get_lr(self):
         warmup_factor = 1
@@ -174,8 +174,8 @@ class WarmupPolyLR(torch.optim.lr_scheduler._LRScheduler):
     def __init__(
         self,
         optimizer,
-        target_lr=0,
-        max_iters=0,
+        T_max,
+        eta_min=0,
         power=0.9,
         warmup_factor=1.0 / 3,
         warmup_iters=500,
@@ -188,8 +188,8 @@ class WarmupPolyLR(torch.optim.lr_scheduler._LRScheduler):
                 "got {}".format(warmup_method)
             )
 
-        self.target_lr = target_lr
-        self.max_iters = max_iters
+        self.eta_min = eta_min
+        self.T_max = T_max
         self.power = power
         self.warmup_factor = warmup_factor
         self.warmup_iters = warmup_iters
@@ -198,7 +198,7 @@ class WarmupPolyLR(torch.optim.lr_scheduler._LRScheduler):
         super(WarmupPolyLR, self).__init__(optimizer, last_epoch)
 
     def get_lr(self):
-        N = self.max_iters - self.warmup_iters
+        N = self.T_max - self.warmup_iters
         T = self.last_epoch - self.warmup_iters
         if self.last_epoch < self.warmup_iters:
             if self.warmup_method == "constant":
@@ -209,20 +209,89 @@ class WarmupPolyLR(torch.optim.lr_scheduler._LRScheduler):
             else:
                 raise ValueError("Unknown warmup type.")
             return [
-                self.target_lr + (base_lr - self.target_lr) * warmup_factor
+                self.eta_min + (base_lr - self.eta_min) * warmup_factor
                 for base_lr in self.base_lrs
             ]
         factor = pow(1 - T / N, self.power)
         return [
-            self.target_lr + (base_lr - self.target_lr) * factor
+            self.eta_min + (base_lr - self.eta_min) * factor
             for base_lr in self.base_lrs
         ]
 
 
-if __name__ == "__main__":
-    import torch
-    import torch.nn as nn
+class WarmupCosineAnnealingLR(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(
+        self,
+        optimizer,
+        T_max,
+        warmup_factor=1.0 / 3,
+        warmup_iters=500,
+        warmup_method="linear",
+        eta_min=0,
+        last_epoch=-1,
+    ):
+        if warmup_method not in ("constant", "linear"):
+            raise ValueError(
+                "Only 'constant' or 'linear' warmup_method accepted"
+                "got {}".format(warmup_method)
+            )
+        self.warmup_factor = warmup_factor
+        self.warmup_iters = warmup_iters
+        self.warmup_method = warmup_method
+        self.T_max = T_max
+        self.eta_min = eta_min
+        super(WarmupCosineAnnealingLR, self).__init__(optimizer, last_epoch)
 
-    model = nn.Conv2d(16, 16, 3, 1, 1)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    lr_scheduler = WarmupPolyLR(optimizer, niters=1000)
+    def get_lr(self):
+        warmup_factor = 1
+        if self.last_epoch < self.warmup_iters:
+            if self.warmup_method == "constant":
+                warmup_factor = self.warmup_factor
+            elif self.warmup_method == "linear":
+                alpha = float(self.last_epoch) / self.warmup_iters
+                warmup_factor = alpha
+            return [base_lr * warmup_factor for base_lr in self.base_lrs]
+        if self.last_epoch == 0:
+            return self.base_lrs
+        elif (self.last_epoch - 1 - self.T_max) % (2 * self.T_max) == 0:
+            return [
+                group["lr"]
+                + (base_lr - self.eta_min)
+                * (1 - math.cos(math.pi / self.T_max))
+                / 2
+                for base_lr, group in zip(
+                    self.base_lrs, self.optimizer.param_groups
+                )
+            ]
+        return [
+            (1 + math.cos(math.pi * self.last_epoch / self.T_max))
+            / (1 + math.cos(math.pi * (self.last_epoch - 1) / self.T_max))
+            * (group["lr"] - self.eta_min)
+            + self.eta_min
+            for group in self.optimizer.param_groups
+        ]
+
+
+def get_lr_scheduler(optimizer, args):
+    base_args = {
+        "optimizer": optimizer,
+        "warmup_factor": args.warmup_factor,
+        "warmup_iters": args.warmup_iters,
+        "warmup_method": args.warmup_method,
+    }
+    if args.lr_policy == "poly":
+        base_args.update(
+            T_max=args.max_iters, eta_min=args.eta_min, power=args.poly_power
+        )
+        return WarmupPolyLR(**base_args)
+    elif args.lr_policy == "cosine":
+        base_args.update(T_max=args.max_iters, eta_min=args.eta_min)
+        return WarmupCosineAnnealingLR(**base_args)
+    elif args.lr_policy == "multi_step":
+        base_args.update(
+            milestones=args.multistep_milestones, gamma=args.multistep_gamma
+        )
+        return WarmupMultiStepLR(**base_args)
+    else:
+        raise NotImplementedError
+

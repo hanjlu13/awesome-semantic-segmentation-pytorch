@@ -12,7 +12,7 @@ from core.models.model_zoo import get_segmentation_model
 from core.utils.distributed import *
 
 from core.utils.loss import get_segmentation_loss
-from core.utils.lr_scheduler import WarmupPolyLR
+from core.utils.lr_scheduler import get_lr_scheduler
 from core.utils.score import SegmentationMetric
 from core.utils.tbwriter import TensorboardWriter as TBWriter
 from core.utils.metric_logger import MetricLogger
@@ -137,15 +137,7 @@ class Trainer(object):
         )
 
         # lr scheduling
-        self.lr_scheduler = WarmupPolyLR(
-            self.optimizer,
-            max_iters=args.max_iters,
-            power=0.9,
-            warmup_factor=args.warmup_factor,
-            warmup_iters=args.warmup_iters,
-            warmup_method=args.warmup_method,
-        )
-
+        self.lr_scheduler = get_lr_scheduler(self.optimizer, args)
         if args.distributed:
             self.model = nn.parallel.DistributedDataParallel(
                 self.model,

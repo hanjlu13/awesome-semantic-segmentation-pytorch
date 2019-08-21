@@ -134,7 +134,7 @@ def parse_args():
     )
     parser.add_argument(
         "--lr_scale",
-        type=int,
+        type=float,
         default=10,
         metavar="LRSCALE",
         help="learning rate scale for layers except in backbone(default: 10)",
@@ -154,6 +154,14 @@ def parse_args():
         help="w-decay (default: 5e-4)",
     )
     parser.add_argument(
+        "--lr-policy",
+        type=str,
+        choices=["multi_step", "poly", "cosine"],
+        default="cosine",
+        help="policy to adjust learning rate (default: cosine)",
+    )
+    # warmup settings
+    parser.add_argument(
         "--warmup-iters", type=int, default=0, help="warmup iters"
     )
     parser.add_argument(
@@ -164,6 +172,28 @@ def parse_args():
     )
     parser.add_argument(
         "--warmup-method", type=str, default="linear", help="method of warmup"
+    )
+    # args for poly policy
+    parser.add_argument(
+        "--poly-power", type=float, default=0.9, help="power for poly policy"
+    )
+    # args for cosine anealing policy
+    parser.add_argument(
+        "--eta-min", type=float, default=0.0, help="eta min for cosie policy"
+    )
+    # args for multi step policy
+    parser.add_argument(
+        "--multistep-milestones",
+        default=None,
+        type=int,
+        nargs="+",
+        help="steps for learning rate decay",
+    )
+    parser.add_argument(
+        "--multistep-gamma",
+        default=0.1,
+        type=float,
+        help="decay rate between milestones",
     )
     # cuda setting
     parser.add_argument(
